@@ -1,0 +1,12 @@
+#!/bin/bash
+cd "{{ agent_workdir }}"
+curl -sO http://10.116.110.150/jenkins/jnlpJars/agent.jar
+
+AGENT_ARGS=(
+  -url "{{ primary_url }}"
+  -secret {{ agent_secret }}
+  -name "{{ agent_name }}"
+  -workDir "{{ agent_workdir }}"
+)
+
+exec java -jar agent.jar "${AGENT_ARGS[@]}"

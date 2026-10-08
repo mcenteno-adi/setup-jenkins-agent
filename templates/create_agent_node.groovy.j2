@@ -1,0 +1,31 @@
+// Creates (or recreates) a permanent inbound agent node on the controller and
+// prints its JNLP secret to stdout so Ansible can capture it.
+// Run via: java -jar jenkins-cli.jar -s <url> -auth u:p groovy = < this-file
+import hudson.model.Node
+import hudson.slaves.DumbSlave
+import hudson.slaves.JNLPLauncher
+import hudson.slaves.RetentionStrategy
+import jenkins.model.Jenkins
+
+def name         = "{{ agent_name }}"
+def remoteFS     = "{{ agent_workdir }}"
+def numExecutors = {{ agent_executors }}
+def labels       = "{{ agent_label }}"
+
+Jenkins jenkins = Jenkins.get()
+
+// Remove any existing node with the same name so re-runs are idempotent.
+def existing = jenkins.getNode(name)
+if (existing != null) {
+    jenkins.removeNode(existing)
+}
+
+def slave = new DumbSlave(name, remoteFS, new JNLPLauncher())
+slave.setNumExecutors(numExecutors)
+slave.setLabelString(labels)
+slave.setMode(Node.Mode.EXCLUSIVE)
+slave.setRetentionStrategy(new RetentionStrategy.Always())
+jenkins.addNode(slave)
+
+// The JNLP MAC is the -secret value the inbound agent authenticates with.
+println jenkins.getComputer(name).getJnlpMac()

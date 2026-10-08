@@ -1,0 +1,8 @@
+[Unit]
+Description=Test Harness Jenkins Agent Service
+
+[Service]
+ExecStart=/usr/bin/jenkins_agent.sh
+
+[Install]
+WantedBy=multi-user.target
