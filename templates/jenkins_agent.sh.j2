@@ -9,4 +9,4 @@ AGENT_ARGS=(
   -workDir "{{ agent_workdir }}"
 )
 
-exec java -jar agent.jar "${AGENT_ARGS[@]}"
+exec java -Djava.io.tmpdir="{{ agent_workdir }}/tmp" -jar agent.jar "${AGENT_ARGS[@]}"

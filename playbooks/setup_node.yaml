@@ -89,6 +89,12 @@
         state: directory
         mode: '0755'
 
+    - name: Ensure the agent JVM tmp directory exists
+      file:
+        path: "{{ agent_workdir }}/tmp"
+        state: directory
+        mode: '0755'
+
     - name: Install the agent launch script
       template:
         src: ../templates/jenkins_agent.sh.j2
