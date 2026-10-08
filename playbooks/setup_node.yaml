@@ -37,6 +37,12 @@
       when: item in services_state.ansible_facts.services
 
     #handles secret and creates the node in jenkins
+    - name: Render node-creation Groovy script
+      template:
+        src: ../templates/create_agent_node.groovy.j2
+        dest: /tmp/create_agent_node.groovy
+        mode: '0600'
+        
     - name: Fetch Jenkins CSRF crumb and session cookie
       uri:
         url: "{{ controller_url }}crumbIssuer/api/json"
