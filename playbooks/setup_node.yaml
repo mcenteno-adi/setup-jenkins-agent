@@ -21,4 +21,114 @@
       debug:
         var: java_variable.stdout_lines
 
-    
+    # this is for killing legacy services from previous implementation
+    - name: Discover existing services
+      service_facts:
+      register: services_state
+
+    - name: Stop and disable legacy Swarm services
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: no
+      loop:
+        - jenkins_swarm_client.service
+        - jenkins.service
+      when: item in services_state.ansible_facts.services
+
+    #handles secret and creates the node in jenkins
+    - name: Fetch Jenkins CSRF crumb and session cookie
+      uri:
+        url: "{{ controller_url }}crumbIssuer/api/json"
+        method: GET
+        user: "{{ master_user }}"
+        password: "{{ master_pass }}"
+        force_basic_auth: yes
+        return_content: yes
+      register: crumb_response
+      no_log: true
+
+    - name: Read rendered Groovy script content
+      slurp:
+        src: /tmp/create_agent_node.groovy
+      register: groovy_script_b64
+
+    - name: Create/refresh the node on the controller and capture the secret
+      uri:
+        url: "{{ controller_url }}scriptText"
+        method: POST
+        user: "{{ master_user }}"
+        password: "{{ master_pass }}"
+        force_basic_auth: yes
+        headers:
+          Cookie: "{{ crumb_response.set_cookie | default('') }}"
+          Jenkins-Crumb: "{{ crumb_response.json.crumb }}"
+        body_format: form-urlencoded
+        body:
+          script: "{{ groovy_script_b64.content | b64decode }}"
+        return_content: yes
+        status_code: 200
+      register: cli_result
+      changed_when: true
+      no_log: false
+
+    - name: Store the agent secret
+      set_fact:
+        agent_secret: "{{ cli_result.content | trim }}"
+      no_log: true
+
+    - name: Fail if no secret was returned
+      fail:
+        msg: "Controller did not return a JNLP secret; check master credentials and controller_url."
+      when: agent_secret | length == 0
+
+    # installs the agent and runs it as a service
+    - name: Ensure the agent working directory exists
+      file:
+        path: "{{ agent_workdir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Install the agent launch script
+      template:
+        src: ../templates/jenkins_agent.sh.j2
+        dest: /usr/bin/jenkins_agent.sh
+        mode: '0700'
+      no_log: true
+
+    - name: Install the systemd unit
+      template:
+        src: ../templates/jenkins_agent.service.j2
+        dest: /etc/systemd/system/jenkins_agent.service
+        mode: '0644'
+
+    - name: Reload systemd, enable and (re)start the agent
+      systemd:
+        name: jenkins_agent.service
+        daemon_reload: yes
+        enabled: yes
+        state: restarted
+
+    - name: Clean up rendered Groovy script
+      file:
+        path: /tmp/create_agent_node.groovy
+        state: absent
+
+    # verify if the agent is created and connected to the controller
+    - name: Wait for the agent to report online
+      uri:
+        url: "{{ controller_url }}computer/{{ agent_name }}/api/json"
+        user: "{{ master_user }}"
+        password: "{{ master_pass }}"
+        force_basic_auth: yes
+        return_content: yes
+      register: node_status
+      until: node_status.json.offline == false
+      retries: 3
+      delay: 5
+      no_log: false
+      tags: lookinfines
+
+    - name: Confirm agent is online
+      debug:
+        msg: "Agent '{{ agent_name }}' is online on {{ controller_url }}"
